@@ -1,0 +1,199 @@
+"""
+Este script automatiza:
+1. Intentos de login automáticos en Herokuapp
+2. Prueba de múltiples credenciales
+3. Detección de login exitoso
+4. Captura de pantalla de cada intento y resultado exitoso
+"""
+
+from selenium import webdriver
+from selenium.webdriver import Chrome
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
+import time
+import os
+
+# URL objetivo
+LOGIN_URL = "https://the-internet.herokuapp.com/login"
+
+# Lista de credenciales (usuario, contraseña)
+CREDENTIALS = [
+    ("tomsmith", "wrong"),          # Intento 1: contraseña incorrecta
+    ("admin", "admin"),              # Intento 2: admin/admin (fallo)
+    ("tomsmith", "SuperSecretPassword!"),  # Intento 3: credenciales correctas
+    ("user", "password"),            # Intento 4: credenciales genéricas
+    ("test", "test123"),             # Intento 5: credenciales de prueba
+]
+
+# Configuración de directorios
+SCREENSHOT_DIR = "screenshots"
+if not os.path.exists(SCREENSHOT_DIR):
+    os.makedirs(SCREENSHOT_DIR)
+
+def setup_driver():
+    """Configurar y retornar el driver de Chrome"""
+    service = Service(ChromeDriverManager().install())
+    options = webdriver.ChromeOptions()
+    options.add_argument("--window-size=1920,1080")
+    # options.add_argument("--headless=new")  # Descomenta para modo headless
+    
+    driver = Chrome(service=service, options=options)
+    return driver
+
+def attempt_login(driver, wait, username, password, attempt_number):
+    """Realizar un intento de login"""
+    print(f"\n[*] Intento #{attempt_number}: {username}:{password}")
+    
+    try:
+        # Navegar a la página de login
+        driver.get(LOGIN_URL)
+        print("    [+] Página de login cargada")
+        
+        # Esperar y rellenar campo usuario
+        user_field = wait.until(
+            EC.presence_of_element_located((By.ID, "username"))
+        )
+        user_field.clear()
+        user_field.send_keys(username)
+        print(f"    [+] Usuario: {username}")
+        
+        # Rellenar campo contraseña
+        pwd_field = driver.find_element(By.ID, "password")
+        pwd_field.clear()
+        pwd_field.send_keys(password)
+        print(f"    [+] Contraseña: {'*' * len(password)}")
+        
+        # Click en botón Login
+        login_button = driver.find_element(By.CSS_SELECTOR, "button.radius")
+        login_button.click()
+        print("    [+] Botón de login presionado")
+        
+        # Esperar mensaje de resultado
+        time.sleep(2)
+        
+        # Verificar si redirigió a página segura (login exitoso)
+        current_url = driver.current_url
+        is_success = "/secure" in current_url
+        
+        if is_success:
+            message = "You logged into a secure area!"
+        else:
+            try:
+                message_element = wait.until(
+                    EC.presence_of_element_located((By.ID, "flash")),
+                    timeout=3
+                )
+                message = message_element.text
+            except:
+                message = "No se pudo obtener el mensaje"
+        
+        # Screenshot
+        screenshot_name = f"{SCREENSHOT_DIR}/intento_{attempt_number}_{username}.png"
+        driver.save_screenshot(screenshot_name)
+        print(f"    [+] Screenshot: {screenshot_name}")
+        
+        if is_success:
+            print(f"    [✓] LOGIN EXITOSO!")
+            print(f"    [+] Mensaje: {message.strip()}")
+        else:
+            print(f"    [✗] Login fallido")
+            print(f"    [+] Mensaje: {message.strip()}")
+        
+        return {
+            "attempt": attempt_number,
+            "username": username,
+            "password": password,
+            "success": is_success,
+            "message": message.strip(),
+            "screenshot": screenshot_name,
+            "url": driver.current_url
+        }
+        
+    except Exception as e:
+        print(f"    [!] Error: {e}")
+        return None
+
+def main():
+    """Función principal"""
+    driver = None
+    wait = None
+    results = []
+    successful_login = None
+    
+    try:
+        print("=" * 70)
+        print("AUTOMATIZACIÓN DE LOGIN - OPCIÓN C: FUERZA BRUTA CONTROLADA")
+        print("=" * 70)
+        print(f"Objetivo: {LOGIN_URL}")
+        print(f"Total de intentos: {len(CREDENTIALS)}")
+        
+        # Inicializar driver
+        driver = setup_driver()
+        wait = WebDriverWait(driver, 10)
+        
+        # Realizar intentos de login
+        for i, (username, password) in enumerate(CREDENTIALS, 1):
+            result = attempt_login(driver, wait, username, password, i)
+            if result:
+                results.append(result)
+                if result["success"] and not successful_login:
+                    successful_login = result
+            
+            time.sleep(1)  # Pequeña pausa entre intentos
+        
+        # Resumen de resultados
+        print("\n" + "=" * 70)
+        print("RESUMEN DE INTENTOS")
+        print("=" * 70)
+        
+        for result in results:
+            status = "✓ EXITOSO" if result["success"] else "✗ FALLIDO"
+            print(f"\nIntento #{result['attempt']}: {status}")
+            print(f"  Usuario: {result['username']}")
+            print(f"  Contraseña: {'*' * len(result['password'])}")
+            print(f"  Mensaje: {result['message']}")
+            print(f"  URL final: {result['url']}")
+            print(f"  Screenshot: {result['screenshot']}")
+        
+        # Resumen final
+        print("\n" + "=" * 70)
+        print("ANÁLISIS FINAL")
+        print("=" * 70)
+        
+        successful_attempts = sum(1 for r in results if r["success"])
+        failed_attempts = len(results) - successful_attempts
+        
+        print(f"\nTotal de intentos: {len(results)}")
+        print(f"Intentos exitosos: {successful_attempts}")
+        print(f"Intentos fallidos: {failed_attempts}")
+        
+        if successful_login:
+            print(f"\n[✓] CREDENCIALES CORRECTAS ENCONTRADAS:")
+            print(f"    Usuario: {successful_login['username']}")
+            print(f"    Contraseña: {successful_login['password']}")
+            print(f"    En intento: #{successful_login['attempt']}")
+        else:
+            print(f"\n[!] No se encontraron credenciales correctas")
+        
+        print(f"\n[+] Todas las capturas guardadas en: {SCREENSHOT_DIR}/")
+        
+    except Exception as e:
+        print(f"[!] Error general: {e}")
+    
+    finally:
+        if driver:
+            print("\n[*] Cerrando navegador...")
+            driver.quit()
+            print("[+] Navegador cerrado correctamente")
+
+if __name__ == "__main__":
+    print("\nNOTA IMPORTANTE:")
+    print("- Este script es solo con fines EDUCATIVOS")
+    print("- Usar solo en entornos autorizados (sitios de práctica)")
+    print("- El sitio 'the-internet.herokuapp.com' es vulnerable intencionalmente")
+    print("-" * 70)
+    
+    main()
