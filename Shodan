@@ -1,0 +1,190 @@
+"""
+Opción A: Reconocimiento Automatizado - Shodan + Scraping
+Curso: Hacking Ético - CETI
+Universidad: Juan de Colonia
+
+Este script automatiza:
+1. Login en Shodan
+2. Ejecución de 3 búsquedas distintas
+3. Obtención de: consulta, título y URL
+4. Captura de pantalla de cada resultado
+"""
+
+from os import getenv
+from selenium import webdriver
+from selenium.webdriver import Chrome
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
+import time
+import os
+
+# Credenciales
+USER = getenv("SHODAN_USER", "EMAIL@example.com")  # Cambiar por tu email
+PASSWORD = getenv("SHODAN_PASSWORD", "TU_CONTRASEÑA")  # Cambiar por tu contraseña
+
+# Búsquedas a realizar
+QUERIES = ["Apache", "nginx", "IIS"]
+
+# Configuración de directorios
+SCREENSHOT_DIR = "screenshots"
+if not os.path.exists(SCREENSHOT_DIR):
+    os.makedirs(SCREENSHOT_DIR)
+
+
+def setup_driver():
+    """Configurar y retornar el driver de Chrome"""
+    service = Service(ChromeDriverManager().install())
+    options = webdriver.ChromeOptions()
+    options.add_argument("--window-size=1920,1080")
+    # Descomenta la siguiente línea si quieres ejecutar sin interfaz gráfica
+    # options.add_argument("--headless=new")
+
+    # Intentar reducir detección de automatización
+    options.add_argument("disable-blink-features=AutomationControlled")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option('useAutomationExtension', False)
+
+    driver = Chrome(service=service, options=options)
+    return driver
+
+
+def login_shodan(driver, wait, user, password):
+    """Automatiza login en Shodan"""
+    print("\n[*] Iniciando sesión en Shodan...")
+    try:
+        driver.get("https://account.shodan.io/login")
+
+        username_input = wait.until(
+            EC.presence_of_element_located((By.ID, "username"))
+        )
+        username_input.clear()
+        username_input.send_keys(user)
+        print("    [+] Usuario ingresado")
+
+        password_input = driver.find_element(By.ID, "password")
+        password_input.clear()
+        password_input.send_keys(password)
+        print("    [+] Contraseña ingresada")
+
+        login_button = wait.until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, "input.button.button-primary"))
+        )
+        login_button.click()
+        print("    [+] Botón de login presionado")
+
+        wait.until(
+            EC.presence_of_element_located((By.ID, "search-query"))
+        )
+        print("    [+] Login exitoso!")
+        return True
+
+    except Exception as e:
+        print(f"    [!] Error en login: {e}")
+        return False
+
+
+def perform_search(driver, wait, query, query_number):
+    """Realizar una búsqueda en Shodan"""
+    print(f"\n[*] Búsqueda #{query_number}: '{query}'")
+    try:
+        search_box = wait.until(
+            EC.presence_of_element_located((By.ID, "search-query"))
+        )
+        search_box.clear()
+        search_box.send_keys(query)
+        print(f"    [+] Búsqueda '{query}' ingresada")
+
+        search_box.send_keys(Keys.ENTER)
+        print("    [+] Búsqueda enviada")
+
+        time.sleep(3)
+
+        try:
+            wait.until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "div.search-result"))
+            )
+            print("    [+] Resultados cargados")
+        except Exception:
+            print("    [!] No se encontraron resultados o la página cambió")
+
+        page_title = driver.title
+        current_url = driver.current_url
+
+        print(f"    [+] Título: {page_title}")
+        print(f"    [+] URL: {current_url}")
+        print(f"    [+] Query ejecutada: {query}")
+
+        screenshot_name = f"{SCREENSHOT_DIR}/shodan_search_{query_number}_{query}.png"
+        driver.save_screenshot(screenshot_name)
+        print(f"    [+] Captura guardada: {screenshot_name}")
+
+        return {
+            "query": query,
+            "title": page_title,
+            "url": current_url,
+            "screenshot": screenshot_name
+        }
+
+    except Exception as e:
+        print(f"    [!] Error en búsqueda: {e}")
+        return None
+
+
+def main():
+    """Función principal"""
+    driver = None
+    wait = None
+    results = []
+
+    try:
+        print("=" * 60)
+        print("SCRAPING CON SELENIUM - OPCIÓN A: SHODAN")
+        print("=" * 60)
+
+        driver = setup_driver()
+        wait = WebDriverWait(driver, 15)
+
+        if not login_shodan(driver, wait, USER, PASSWORD):
+            print("[!] No se pudo completar el login. Verifica credenciales.")
+            return
+
+        for i, query in enumerate(QUERIES, 1):
+            result = perform_search(driver, wait, query, i)
+            if result:
+                results.append(result)
+            time.sleep(2)
+
+        print("\n" + "=" * 60)
+        print("RESUMEN DE RESULTADOS")
+        print("=" * 60)
+        for i, result in enumerate(results, 1):
+            print(f"\nBúsqueda #{i}:")
+            print(f"  Query: {result['query']}")
+            print(f"  Título: {result['title']}")
+            print(f"  URL: {result['url']}")
+            print(f"  Screenshot: {result['screenshot']}")
+
+        print(f"\n[+] Total de búsquedas exitosas: {len(results)}/{len(QUERIES)}")
+        print("[+] Todas las capturas guardadas en la carpeta 'screenshots'")
+
+    except Exception as e:
+        print(f"[!] Error general: {e}")
+
+    finally:
+        if driver:
+            print("\n[*] Cerrando navegador...")
+            driver.quit()
+            print("[+] Navegador cerrado correctamente")
+
+
+if __name__ == "__main__":
+    print("\nNOTA IMPORTANTE:")
+    print("- Este script usa login de Shodan por navegador")
+    print("- No necesita SHODAN_API_KEY")
+    print("- Define las variables de entorno SHODAN_USER y SHODAN_PASSWORD")
+    print("-" * 60)
+    main()
