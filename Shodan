@@ -1,8 +1,4 @@
 """
-Opción A: Reconocimiento Automatizado - Shodan + Scraping
-Curso: Hacking Ético - CETI
-Universidad: Juan de Colonia
-
 Este script automatiza:
 1. Login en Shodan
 2. Ejecución de 3 búsquedas distintas
